@@ -3,18 +3,26 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Video;
+
+[Serializable]
+public class VideoTuple
+{
+    public VideoPlayer videoPlayer;
+    public RawImage rawImage;
+}
 
 [Serializable]
 public class VideoManager : MonoBehaviour
 {
-    public VideoPlayer[] videoplayers;
-    public Dictionary<VideoPlayer, Coroutine> fadeCoroutines;
+    public VideoTuple[] videoplayers;
+    public Dictionary<RawImage, Coroutine> fadeCoroutines;
     private VideoPlayer currentVideo = null;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        fadeCoroutines = new Dictionary<VideoPlayer, Coroutine>();
+        fadeCoroutines = new Dictionary<RawImage, Coroutine>();
         string rootPath = Path.GetFullPath(Path.Combine(Application.dataPath, "../"));
         string videoFolder = Path.Combine(rootPath, "CustomVideos");
 
@@ -28,13 +36,14 @@ public class VideoManager : MonoBehaviour
 
         if (videoFiles.Length > 0)
         {
+            //匹配具有与对象名字相同的前缀的视频
             for (int i = 0; i < videoFiles.Length; ++i)
                 {
                    for (int j = 0; j < videoplayers.Length; ++j)
                     {
-                        if (videoFiles[i].Contains(videoplayers[j].name))
+                        if (videoFiles[i].Contains(videoplayers[j].videoPlayer.name))
                         {
-                            videoplayers[j].url = videoFiles[i];
+                            videoplayers[j].videoPlayer.url = videoFiles[i];
                         }
                     }
                 }
@@ -43,71 +52,69 @@ public class VideoManager : MonoBehaviour
             Debug.LogWarning("Found NO videos in CustomVideo folder! Perhaps you should fill'em up?");
         }
         
-        foreach (VideoPlayer vid in videoplayers)
+        foreach (var vid in videoplayers)
         {
-            vid.enabled = false;
+            vid.videoPlayer.enabled = false;
+            vid.rawImage.enabled = false;
         }
     }
 
     public void SwitchTo(string vidname)
     {
-        foreach(VideoPlayer vid in videoplayers)
+        foreach(var vid in videoplayers)
         {
-            if (vid.name == vidname)
+            if (vid.videoPlayer.name == vidname)
             {
-                if (currentVideo == vid)
+                if (currentVideo == vid.videoPlayer)
                 {
                     return;
                 }
-
-                vid.enabled = true;
-                currentVideo = vid;
+                
+//vid.rawImage.transform.SetAsLastSibling();
+                currentVideo = vid.videoPlayer;
                 StartCoroutine(PrepareAndPlayRoutine(vid));
             }else
             {
-                FadeTo(0f, vid);
-                if (vid.isPlaying)
-                {
-                    vid.Pause();
-                }
-                vid.enabled = false;
+                FadeTo(0f, vid, true);
             }
         }
     }
 
-    private IEnumerator PrepareAndPlayRoutine(VideoPlayer vid)
+    private IEnumerator PrepareAndPlayRoutine(VideoTuple vid)
     {
-        // 1. 如果视频还没准备好，调用 Prepare 并等待
-        if (!vid.isPrepared)
+        vid.videoPlayer.enabled = true;
+        if (!vid.videoPlayer.isPrepared)
         {
-            vid.Prepare();
-            // 在这里挂起，直到视频准备完毕。这期间游戏依然流畅，不会死机
-            while (!vid.isPrepared)
+            vid.videoPlayer.Prepare();
+            while (!vid.videoPlayer.isPrepared)
             {
                 yield return null;
             }
         }
 
-        vid.transform.SetAsFirstSibling();
-        vid.Play();
+        vid.videoPlayer.time = 0;
+        vid.videoPlayer.Play();
         yield return null; 
 
-        FadeTo(1f, vid);
+        vid.rawImage.enabled = true;
+        
+        FadeTo(1f, vid, false);
     }
 
-    public void FadeTo(float targetAlpha, VideoPlayer vid, float duration = 1f)
+    public void FadeTo(float targetAlpha, VideoTuple vid, bool disableWhenFinish, float duration = 0.5f)
     {
-        if (fadeCoroutines.ContainsKey(vid) && fadeCoroutines[vid] != null)
+        if (fadeCoroutines.ContainsKey(vid.rawImage) && fadeCoroutines[vid.rawImage] != null)
         {
-            StopCoroutine(fadeCoroutines[vid]);
+            StopCoroutine(fadeCoroutines[vid.rawImage]);
         }
 
-        fadeCoroutines[vid] = StartCoroutine(FadeRoutine(targetAlpha, duration, vid));
+        fadeCoroutines[vid.rawImage] = StartCoroutine(FadeRoutine(targetAlpha, duration, vid, disableWhenFinish));
     }
 
-    private IEnumerator FadeRoutine(float targetAlpha, float duration, VideoPlayer vid)
+//协程实现的渐变过程
+    private IEnumerator FadeRoutine(float targetAlpha, float duration, VideoTuple vid, bool disableWhenFinish)
     {
-        CanvasGroup canvasGroup = vid.GetComponent<CanvasGroup>();
+        CanvasGroup canvasGroup = vid.rawImage.GetComponent<CanvasGroup>();
         float startAlpha = canvasGroup.alpha;
         float elapsedTime = 0f;
 
@@ -121,18 +128,23 @@ public class VideoManager : MonoBehaviour
         }
 
         canvasGroup.alpha = targetAlpha;
-        fadeCoroutines[vid] = null;
+        fadeCoroutines[vid.rawImage] = null;
+
+        if (disableWhenFinish)
+        {
+            vid.rawImage.enabled = false;
+            vid.videoPlayer.Pause();
+        }
     }
-    // Update is called once per frame
     public void PlayVideo(string vidname)
     {
-        foreach (VideoPlayer vid in videoplayers)
+        foreach (var vid in videoplayers)
         {
-            if (vidname == vid.name)
+            if (vidname == vid.videoPlayer.name)
             {
-                if (!vid.isPlaying)
+                if (!vid.videoPlayer.isPlaying)
                 {
-                    vid.Play();
+                    vid.videoPlayer.Play();
                 }
                 return;
             }
@@ -142,13 +154,13 @@ public class VideoManager : MonoBehaviour
 
     public void PauseVideo(string vidname)
     {
-        foreach (VideoPlayer vid in videoplayers)
+        foreach (var vid in videoplayers)
         {
-            if (vidname == vid.name)
+            if (vidname == vid.videoPlayer.name)
             {
-                if (vid.isPlaying)
+                if (vid.videoPlayer.isPlaying)
                 {
-                    vid.Pause();
+                    vid.videoPlayer.Pause();
                 }
                 return;
             }
@@ -158,11 +170,11 @@ public class VideoManager : MonoBehaviour
 
     public void StopVideo(string vidname)
     {
-        foreach (VideoPlayer vid in videoplayers)
+        foreach (var vid in videoplayers)
         {
-            if (vidname == vid.name)
+            if (vidname == vid.videoPlayer.name)
             {
-                vid.Stop();
+                vid.videoPlayer.Stop();
                 return;
             }
         }
@@ -171,9 +183,10 @@ public class VideoManager : MonoBehaviour
 
     public void StopAllVideo()
     {
-        foreach (VideoPlayer vid in videoplayers)
+        foreach (var vid in videoplayers)
         {
-            vid.Stop();
+            vid.videoPlayer.enabled = false;
+            vid.rawImage.enabled = false;
         }
     } 
 }
