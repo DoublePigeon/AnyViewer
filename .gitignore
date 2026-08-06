@@ -110,3 +110,5 @@ InitTestScene*.unity*
 *.mp4
 /Build
 .git/
+.vsconfig
+UpgradeLog.htm
