@@ -41,6 +41,7 @@
 
 # Visual Studio cache directory
 .vs/
+.vscode/
 
 # Gradle cache directory
 .gradle/
@@ -108,3 +109,4 @@ InitTestScene*.unity*
 
 *.mp4
 /Build
+.git/
