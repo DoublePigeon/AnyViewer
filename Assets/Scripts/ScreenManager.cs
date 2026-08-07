@@ -15,10 +15,7 @@ public class ScreenManager : MonoBehaviour
             if (canv.name == "MainScreen Canv")
             {
                 canv.enabled = true;
-            }else if (canv.name == "GameScreen Canv")
-            {
-                canv.enabled = false;
-            }else if (canv.name == "SettingScreen Canv")
+            }else
             {
                 canv.enabled = false;
             }
@@ -27,6 +24,20 @@ public class ScreenManager : MonoBehaviour
         }
 
         Debug.Log(MyMsg);
+    }
+
+    public void SwitchToCanv(string name)
+    {
+        foreach (Canvas canv in canvases)
+        {
+            if (canv.name == name)
+            {
+                canv.enabled = true;
+            }else
+            {
+                canv.enabled = false;
+            }
+        }
     }
 
     public void SetCanvasState(string name, bool onNoff)

@@ -26,28 +26,24 @@ public class ButtonManager: MonoBehaviour
         {
             case "btnMainStart":
                 Debug.Log("Clicked start");
-                screenManager.SetCanvasState("GameScreen Canv", true);
-                screenManager.SetCanvasState("MainScreen Canv", false);
-                screenManager.SetCanvasState("SettingScreen Canv", false);
-
+                screenManager.SwitchToCanv("GameScreen Canv");
                 videoManager.SwitchTo("Vloop1");
                 break;
             case "btnMainSettings":
                 Debug.Log("Clicked setting");
-                screenManager.SetCanvasState("SettingScreen Canv", true);
-                screenManager.SetCanvasState("MainScreen Canv", false);
+                screenManager.SwitchToCanv("SettingScreen Canv");
                 break;
             case "btnMainExit":
                 Debug.Log("Clicked exit");
-                screenManager.SetCanvasState("GameScreen Canv", false);
-                screenManager.SetCanvasState("MainScreen Canv", false);
-                screenManager.SetCanvasState("SettingScreen Canv", false);
                 Application.Quit();
+                break;
+            case "btnMainAutoCut":
+                Debug.Log("Clicked Auto Cutter");
+                screenManager.SwitchToCanv("AutoCutterScreen Canv");
                 break;
             case "btnSettingsReturn":
                 Debug.Log("Clicked settings");
-                screenManager.SetCanvasState("MainScreen Canv", true);
-                screenManager.SetCanvasState("SettingScreen Canv", false);
+                screenManager.SwitchToCanv("MainScreen Canv");
                 break;
             case "btnGameP1":
                 Debug.Log("Clicked loop1");
