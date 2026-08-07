@@ -24,14 +24,15 @@ public class ButtonManager: MonoBehaviour
         Debug.Log("Clicked:" + btn.name);
         switch (btn.name)
         {
+            //Mainscreen buttons
             case "btnMainStart":
                 Debug.Log("Clicked start");
-                screenManager.SwitchToCanv("GameScreen Canv");
+                screenManager.SwitchTo("GameScreen Canv");
                 videoManager.SwitchTo("Vloop1");
                 break;
             case "btnMainSettings":
                 Debug.Log("Clicked setting");
-                screenManager.SwitchToCanv("SettingScreen Canv");
+                screenManager.SwitchTo("SettingScreen Canv");
                 break;
             case "btnMainExit":
                 Debug.Log("Clicked exit");
@@ -39,12 +40,16 @@ public class ButtonManager: MonoBehaviour
                 break;
             case "btnMainAutoCut":
                 Debug.Log("Clicked Auto Cutter");
-                screenManager.SwitchToCanv("AutoCutterScreen Canv");
+                screenManager.SwitchTo("AutoCutterScreen Canv");
                 break;
+
+            //Settingscreen buttons
             case "btnSettingsReturn":
                 Debug.Log("Clicked settings");
-                screenManager.SwitchToCanv("MainScreen Canv");
+                screenManager.SwitchTo("MainScreen Canv");
                 break;
+
+            //Gamescreen buttons
             case "btnGameP1":
                 Debug.Log("Clicked loop1");
                 videoManager.SwitchTo("Vloop1");
@@ -76,6 +81,47 @@ public class ButtonManager: MonoBehaviour
                 screenManager.SetCanvasState("MainScreen Canv", true);
                 screenManager.SetCanvasState("GameScreen Canv", false);
                 screenManager.SetCanvasState("SettingScreen Canv", false);
+                break;
+
+            //Autocutter screen buttons
+            case "btnACLastFrame":
+
+                break;
+
+            case "btnACNextFrame":
+
+                break;
+
+            case "btnACPause":
+
+                break;
+
+            case "btnACPlay":
+
+                break;
+
+            case "btnAChelp":
+
+                break;
+
+            case "btnACrefresh":
+
+                break;
+
+            case " btnACChooseCurrentFrame":
+
+                break;
+
+            case "btnACAutoFind":
+
+                break;
+
+            case "btnACManualFind":
+
+                break;
+
+            case "btnACProcess":
+
                 break;
                 
             default:

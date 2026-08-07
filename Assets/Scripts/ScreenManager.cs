@@ -26,7 +26,7 @@ public class ScreenManager : MonoBehaviour
         Debug.Log(MyMsg);
     }
 
-    public void SwitchToCanv(string name)
+    public void SwitchTo(string name)
     {
         foreach (Canvas canv in canvases)
         {
