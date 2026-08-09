@@ -4,11 +4,11 @@ using System.IO;
 using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.Video;
+using UnityEngine.EventSystems;
 using TMPro;
 using UnityEngine.UI;
 using System;
 using System.Linq;
-using Unity.VisualScripting;
 
 [Serializable]
 public class AutoCutManager : MonoBehaviour
@@ -17,18 +17,24 @@ public class AutoCutManager : MonoBehaviour
     public string videoPath;
     public string ffmpegExePath;
     public string saveDirectory;
+    public float fps;
 
     public long startFrame = 0;
+    public long endFrame = 0;
     public float thresholdSimValue = 0.98f; //0~1
     public int thumbnailSize = 320;
 
-    public bool isTranscodeMode = true;
+    public bool isProcessing = false;
+    public bool isCutting = false;
 
     //组件与缓存
     public VideoPlayer videoPlayer;
     public RenderTexture originalRT;
+    public RenderTexture referenceRT;
     private RenderTexture thumbnailRT;
     private Texture2D tempTex;
+
+    public RawImage referenceIMG;
     
     //分析状态标识
     private bool isFrameReady = false;
@@ -44,17 +50,22 @@ public class AutoCutManager : MonoBehaviour
     private Queue<string> logQueue;
 
     //UI Misc
-    public InputField ffmpegInputField;
+    public TMP_InputField ffmpegInputField;
     public TMP_Dropdown videosDropDown;
     public List<string> videosDropDownOptions;
+    public Toggle togglePlaceRef;
+    public Slider videoSlider;
+    public bool isSliderDragging;
+    public Canvas RightPanelUI;
+    public Canvas HelpUI;
 
     void Start()
     {
         logQueue = new Queue<string>();
-        videoPlayer = GetComponent<VideoPlayer>();
         
         string rootPath = Path.GetFullPath(Path.Combine(Application.dataPath, "../"));
-        string videoFolder = Path.Combine(rootPath, "RawVideos");
+        videoFolder = Path.Combine(rootPath, "RawVideos");
+        saveDirectory = Path.Combine(rootPath, "ProcessedVideos");
 
         if (!Directory.Exists(videoFolder))
         {
@@ -62,21 +73,44 @@ public class AutoCutManager : MonoBehaviour
             UnityEngine.Debug.Log("Created RawVideos folder since it does not exists:" + videoFolder);
         }
 
+        //初始化窗口
+        ChangeHelpState(false);
+
         //初始化Dropdown
         videosDropDown.onValueChanged.AddListener(OnVideoDropdownValChanged);
+        InitDropdown();
 
         //初始化ffmpeg输入
         ffmpegInputField.onEndEdit.AddListener(OnFfmpgeInputChanged);
+        ffmpegInputField.text = PlayerPrefs.GetString("ffmpegPath", "");
+        if (!string.IsNullOrEmpty(ffmpegInputField.text) && File.Exists(ffmpegInputField.text))
+        {
+            ffmpegExePath = PlayerPrefs.GetString("ffmpegPath");
+        }
+
+        //初始化ref
+        togglePlaceRef.onValueChanged.AddListener(SetRefState);
+        togglePlaceRef.isOn = false;
+
+        //初始化进度条
+        videoSlider.onValueChanged.AddListener(OnSliderValChanged);
+        EventTrigger trigger = videoSlider.gameObject.GetComponent<EventTrigger>();
+        if (trigger == null) trigger = videoSlider.gameObject.AddComponent<EventTrigger>();
+
+            //进度条的拖拽监听;
+        EventTrigger.Entry pointerDownEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerDown };
+        pointerDownEntry.callback.AddListener((data) => { isSliderDragging = true; });
+        trigger.triggers.Add(pointerDownEntry);
+
+        EventTrigger.Entry pointerUpEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerUp };
+        pointerUpEntry.callback.AddListener((data) => { isSliderDragging = false; });
+        trigger.triggers.Add(pointerUpEntry);
 
         // 准备缩略图渲染纹理，自动处理Resize操作
         thumbnailRT = new RenderTexture(originalRT.width / 4, originalRT.height / 4, 0, RenderTextureFormat.ARGB32);
         tempTex = new Texture2D(originalRT.width / 4, originalRT.height / 4, TextureFormat.ARGB32, false);
-        //记得加给thumbnail赋值的逻辑
-/*
-        videoPlayer.url = videoPath;
-        videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-        videoPlayer.targetTexture = thumbnailRT;
-*/
+
+        videoPlayer.enabled = true;
         videoPlayer.sendFrameReadyEvents = true;
         videoPlayer.frameReady += OnFrameReady;
     }
@@ -94,37 +128,74 @@ public class AutoCutManager : MonoBehaviour
     private void OnFrameReady(VideoPlayer source, long frameIdx)
     {
         isFrameReady = true;
+        Graphics.Blit(originalRT, thumbnailRT);
     }
 
-    private IEnumerator FindLoopRoutine() //记得改
+    private IEnumerator FindLoopRoutine()  //修一下这个seek
     {
-        UnityEngine.Debug.Log("开始准备视频...");
-        videoPlayer.Prepare();
-        while (!videoPlayer.isPrepared) yield return null;
+        if (isProcessing)
+        {
+            AddPlayerLog("已经正在自动选取结尾帧，不能进重复进行这一操作", "#ff0000");
+            yield break;
+        }
 
+        isProcessing = true;
+        if (!videoPlayer.isPrepared)
+        {
+            videoPlayer.Prepare();
+            while (!videoPlayer.isPrepared) yield return null;
+        }
+        
         long totalFrames = (long)videoPlayer.frameCount;
-        float fps = videoPlayer.frameRate;
+        fps = videoPlayer.frameRate;
         float totalDuration = totalFrames / fps;
         
-        UnityEngine.Debug.Log($"视频准备完毕。总帧数: {totalFrames}, 帧率: {fps}");
+        AddPlayerLog($"已经载入完成视频: {Path.GetFileName(videoPath)}, fps:{fps}, 总帧数:{totalFrames}");
 
-        // 1. 获取起始关键帧
-        videoPlayer.frame = startFrame;
         videoPlayer.Pause(); // 暂停以确保精准读取当前帧
+
+        bool seekDone = false;
+        VideoPlayer.EventHandler onSeek = (vp) => { seekDone = true; };
+
+        if (videoPlayer.frame != startFrame)
+        {
+            videoPlayer.seekCompleted += onSeek;
+            videoPlayer.frame = startFrame;
+            yield return new WaitUntil(() => seekDone);
+            videoPlayer.seekCompleted -= onSeek;
+        }
         
-        isFrameReady = false;
-        yield return new WaitUntil(() => isFrameReady);
+        yield return null; 
+        yield return new WaitForEndOfFrame(); 
+
+        Graphics.Blit(originalRT, thumbnailRT);
 
         firstFrameVector = GetImageVectorFromRT();
         firstFrameNorm = CalculateNorm(firstFrameVector);
-        UnityEngine.Debug.Log($"已提取第 {startFrame} 帧作为基准关键帧");
+        AddPlayerLog($"已提取第 {startFrame} 帧作为基准关键帧");
 
         float highestSim = 0f;
         long bestMatchFrame = startFrame;
         bool found = false;
 
-        // 2. 逐帧步进寻找循环点 (为了避开自身，从 startFrame + 10 开始寻找)
-        for (long frame = startFrame + 10; frame < totalFrames; frame++)
+        //跳过一些与基准帧接近的帧
+        long checkStartFrame = startFrame + 10;
+        if (checkStartFrame >= totalFrames) 
+        {
+            checkStartFrame = totalFrames - 1;
+        }
+        
+        seekDone = false;
+        if (videoPlayer.frame != checkStartFrame - 1)
+        {
+            videoPlayer.seekCompleted += onSeek;
+            videoPlayer.frame = checkStartFrame - 1;
+            yield return new WaitUntil(() => seekDone);
+            videoPlayer.seekCompleted -= onSeek;
+        }
+
+        // 逐帧步进寻找循环点 
+        for (long frame = checkStartFrame; frame < totalFrames; ++frame)
         {
             videoPlayer.StepForward(); // 向前步进一帧
             isFrameReady = false;
@@ -140,38 +211,38 @@ public class AutoCutManager : MonoBehaviour
                 bestMatchFrame = frame;
             }
 
-            // 输出进度
-            if (frame % 30 == 0) 
-                UnityEngine.Debug.Log($"正在匹配第 {frame} 帧, 当前相似度: {simValue:F4}");
-
-            // 达到阈值，匹配成功
-            if (simValue >= thresholdSimValue)
+            if (frame % 300 == 0) 
             {
-                found = true;
-                float p_start_time = startFrame / fps;
-                float p_end_time = frame / fps;
-                float p_len_time = p_end_time - p_start_time;
-
-                UnityEngine.Debug.Log($"<color=green>匹配成功！</color>\n" +
-                                      $"循环起止时间：{p_start_time:F2}s ~ {p_end_time:F2}s\n" +
-                                      $"起止帧：{startFrame} ~ {frame}\n" +
-                                      $"总时长：{p_len_time:F2}s, 相似度：{simValue:F4}");
-
-                // 3. 自动调用FFmpeg截取视频
-                CutVideo(p_start_time, p_end_time);
-                break;
+                UnityEngine.Debug.Log($"处理进度: {frame} / {totalFrames}");
             }
         }
 
+        if (highestSim >= thresholdSimValue)
+            {
+                found = true;
+                float p_start_time = startFrame / fps;
+                float p_end_time = bestMatchFrame / fps;
+                float p_len_time = p_end_time - p_start_time;
+
+                AddPlayerLog($"匹配成功\n" +
+                                      $"循环起止时间：{p_start_time:F2}s ~ {p_end_time:F2}s\n" +
+                                      $"起止帧：{startFrame} ~ {bestMatchFrame}\n" +
+                                      $"总时长：{p_len_time:F2}s, 相似度：{highestSim:F4}", "#33ff00");
+
+                endFrame = bestMatchFrame;
+                hasLastFrame = true;
+            }
+
         if (!found)
         {
-            UnityEngine.Debug.LogWarning($"未找到完美循环点。最高相似度发生在第 {bestMatchFrame} 帧, 相似度: {highestSim:F4}");
+            AddPlayerLog($"未找到循环点,但是最高相似度发生在第 {bestMatchFrame} 帧, 相似度: {highestSim:F4}", "#ff0000");
+            SeekToFrame(bestMatchFrame);
         }
+        isProcessing = false;
     }
 
     /// <summary>
     /// 从RenderTexture读取像素，转换为灰度，并返回一维向量
-    /// 相当于Python中的 get_thum 功能
     /// </summary>
     private float[] GetImageVectorFromRT()
     {
@@ -185,8 +256,7 @@ public class AutoCutManager : MonoBehaviour
 
         for (int i = 0; i < pixels.Length; i++)
         {
-            // 将RGB转为灰度值 (近似人眼感知或简单的平均值计算)
-            // Python代码中是 average(pixel_tuple)，这里我们取平均
+            // 将RGB转为灰度值
             float gray = (pixels[i].r + pixels[i].g + pixels[i].b) / 3f;
             vector[i] = gray;
         }
@@ -226,27 +296,48 @@ public class AutoCutManager : MonoBehaviour
     /// <summary>
     /// 使用FFmpeg截取视频
     /// </summary>
-    private void CutVideo(float beginSec, float endSec)
+    public void CutVideo()
     {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+
         if (!Directory.Exists(saveDirectory))
+        {
             Directory.CreateDirectory(saveDirectory);
+        }
+
+        if (!hasLastFrame)
+        {
+            AddPlayerLog("还没有选择结尾帧！", "#ff0000");
+            return;
+        }
+
+        if (isCutting)
+        {
+            AddPlayerLog("已经正在截取视频，不能重复进行这一操作", "#ff0000");
+            return;
+        }
+        isCutting = true;
 
         string fileName = Path.GetFileNameWithoutExtension(videoPath) + "_loop.mp4";
         string savePath = Path.Combine(saveDirectory, fileName);
-        float duration = endSec - beginSec;
-        string cmdArgs = "";
 
-        if (isTranscodeMode)
-        {
-            // 转码模式 (准确, 耗时)
-            cmdArgs = $"-y -ss {beginSec} -t {duration} -i \"{videoPath}\" -c:v libx264 -c:a aac -strict experimental -b:a 640k \"{savePath}\"";
-        }
-        else
-        {
-            // Copy模式 (极快, 时间不一定完美贴合关键帧)
-            cmdArgs = $"-y -accurate_seek -ss {beginSec} -t {duration} -i \"{videoPath}\" -acodec copy -vcodec copy -async 1 -avoid_negative_ts 1 \"{savePath}\"";
-        }
+        double beginSec = (double)startFrame / fps;
+        double endSec = (double)endFrame / fps;
 
+        string filterComplex = "";
+        string mapArgs = "";
+
+
+        filterComplex = $"[0:v]trim=start_frame={startFrame}:end_frame={endFrame},setpts=PTS-STARTPTS[v];" +
+                            $"[0:a]atrim=start={beginSec:F6}:end={endSec:F6},asetpts=PTS-STARTPTS[a]";
+            mapArgs = "-map \"[v]\" -map \"[a]\"";
+
+
+        string cmdArgs = $"-y -i \"{videoPath}\" -filter_complex \"{filterComplex}\" {mapArgs} -c:v libx264 -crf 18 -preset fast -c:a aac -b:a 320k \"{savePath}\"";
         UnityEngine.Debug.Log("开始调用FFmpeg进行截取: ffmpeg " + cmdArgs);
 
         ProcessStartInfo psi = new ProcessStartInfo
@@ -262,16 +353,28 @@ public class AutoCutManager : MonoBehaviour
         try
         {
             Process process = Process.Start(psi);
-            process.EnableRaisingEvents = true;
-            process.Exited += (sender, e) =>
-            {
-                UnityEngine.Debug.Log($"<color=cyan>截取完成！文件保存在：{savePath}</color>");
-            };
+            
+            process.EnableRaisingEvents = true; 
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            StartCoroutine(WaitForFFmpegProcess(process, savePath));
         }
         catch (System.Exception ex)
         {
             UnityEngine.Debug.LogError("FFmpeg 运行失败，请检查路径。错误信息：" + ex.Message);
         }
+        isCutting = false;
+    }
+
+    private IEnumerator WaitForFFmpegProcess(Process process, string savePath)
+    {
+        while (!process.HasExited)
+        {
+            yield return null; 
+        }
+        AddPlayerLog($"截取完成！文件保存在：{savePath}", "#33ff00");
+        process.Dispose(); 
     }
 
     public void AddPlayerLog(string message, string color)
@@ -283,6 +386,52 @@ public class AutoCutManager : MonoBehaviour
     public void AddPlayerLog(string message)
     {
         AddPlayerLog(message, "#ffffff");
+    }
+
+    public void SeekToFrame(long targetFrame)
+    {
+        if (!videoPlayer.isPrepared)
+        {
+            UnityEngine.Debug.LogWarning("Can't seek when the video is not ready");
+            return;
+        }
+
+        long totalFrames = (long)videoPlayer.frameCount;
+
+        if (targetFrame < 0) 
+        {
+            targetFrame = 0;
+        }
+        else if (targetFrame >= totalFrames) 
+        {
+            targetFrame = totalFrames - 1;
+        }
+
+        videoPlayer.frame = targetFrame;
+        
+        // videoPlayer.Pause(); 
+    }
+
+    public void SeekToPercentage(float percentage)
+    {
+        if (!videoPlayer.isPrepared)
+        {
+            UnityEngine.Debug.LogWarning("Can't seek when the video is not ready");
+            AddPlayerLog("视频尚未准备好", "#ffe600");
+            return;
+        }
+
+        if (percentage > 1)
+        {
+            percentage = 1f;
+        }else if (percentage < 0)
+        {
+            percentage = 0;
+        }
+
+        long totalFrames = (long)videoPlayer.frameCount;
+
+        SeekToFrame((long)(totalFrames * percentage));
     }
 
     private void EnqueueAndDisplay(string message)
@@ -341,7 +490,7 @@ public class AutoCutManager : MonoBehaviour
             newOptions.Add(Path.GetFileName(path));
         }
 
-        if (newOptions.SequenceEqual(videosDropDownOptions))
+        if (!newOptions.SequenceEqual(videosDropDownOptions))
         {
             videosDropDown.ClearOptions();
             videosDropDown.AddOptions(newOptions);
@@ -355,15 +504,21 @@ public class AutoCutManager : MonoBehaviour
 
     public void OnVideoDropdownValChanged(int index)
     {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
         string selectedText = videosDropDown.options[index].text;
 
         AddPlayerLog("选中了视频：" + selectedText);
 
         string newVideoPath = Path.Combine(videoFolder, selectedText);
 
-        if (Directory.Exists(newVideoPath))
+        if (File.Exists(newVideoPath))
         {
             videoPath = newVideoPath;
+            videoPlayer.url = newVideoPath;
         }else
         {
             AddPlayerLog("这一视频在目录中不存在: " + newVideoPath, "#ff0000");
@@ -373,25 +528,181 @@ public class AutoCutManager : MonoBehaviour
 
     public void OnFfmpgeInputChanged(string userInput)
     {
-        strip(userInput);
+        userInput = userInput.Replace("\"", "").Trim();
         UnityEngine.Debug.Log("Input path:" + userInput);
-        if (Directory.Exists(userInput))
+        if (File.Exists(userInput))
         {
             ffmpegExePath = userInput;
-            AddPlayerLog("设置了ffmpeg路径:" + userInput);
+            PlayerPrefs.SetString("ffmpegPath", ffmpegExePath);
+            AddPlayerLog("设置了ffmpeg路径:" + userInput, "#33ff00");
         }else
         {
             AddPlayerLog("不存在的ffmpeg路径:" + userInput, "#ff0000");
         }
     }
 
-    private void strip(string str)
+    public void ChooseCurrentAsStart()
     {
-        for (int i = 0; i < str.Length; ++i)
+        if (videoPlayer.isPlaying)
         {
-            if (str[i] == '"')
+            AddPlayerLog("不能在视频正在播放时选取", "#ff0000");
+            return;
+        }
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        if (startFrame < 0 || startFrame > (long)videoPlayer.frameCount)
+        {
+            AddPlayerLog($"选择了无效的帧数: {startFrame}", "#ff0000");
+            return;
+        }
+        startFrame = videoPlayer.frame;
+        Graphics.Blit(originalRT, referenceRT);
+        AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为起始");
+    }
+
+    public void ChooseCurrenAsEnd()
+    {
+        if (videoPlayer.isPlaying)
+        {
+            AddPlayerLog("不能在视频正在播放时选取", "#ff0000");
+            return;
+        }
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        endFrame = videoPlayer.frame;
+        AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为起始");
+    }
+
+    public void SetRefState(bool state)
+    {
+        if (state)
+        {
+            referenceIMG.enabled = true;
+        }else
+        {
+            referenceIMG.enabled = false;
+        }
+    }
+
+    public void OnSliderValChanged(float percentage)
+    {
+        SeekToPercentage(percentage);
+    }
+
+    public void PlayVid()
+    {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        StartCoroutine(PrepareAndPlayRoutine());
+    }
+
+    private IEnumerator PrepareAndPlayRoutine()
+    {
+        videoPlayer.enabled = true;
+        if (!videoPlayer.isPrepared)
+        {
+            AddPlayerLog("正在载入视频...");
+            videoPlayer.Prepare();
+            while (!videoPlayer.isPrepared)
             {
-                str.Remove(i);
+                yield return null;
+            }
+            AddPlayerLog("视频载入完成");
+        }
+
+        videoPlayer.Play();
+        yield return null; 
+    }
+
+    public void PauseVid()
+    {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        videoPlayer.Pause();
+    }
+
+    public void NextFrameVid()
+    {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        if (videoPlayer.isPlaying)
+        {
+            AddPlayerLog("不能在播放时逐帧操作", "#ff0000");
+            return;
+        }
+        videoPlayer.StepForward();
+    }
+
+    public void LastFrameVid()
+    {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        if (videoPlayer.isPlaying)
+        {
+            AddPlayerLog("不能在播放时逐帧操作", "#ff0000");
+            return;
+        }
+        long currentFrame = videoPlayer.frame;
+        if (currentFrame > 0)
+        {
+            videoPlayer.frame = currentFrame - 1;
+        }
+    }
+
+    public void ChangeHelpState(bool stateType)
+    {
+        if (isProcessing)
+        {
+            AddPlayerLog("正在自动选取结尾帧，不能进行这一操作", "#ff0000");
+            return;
+        }
+        if (stateType)
+        {
+            RightPanelUI.enabled = false;
+            HelpUI.enabled = true;
+        }else
+        {
+            RightPanelUI.enabled = true;
+            HelpUI.enabled = false;
+        }
+    }
+
+    //在返回时调用
+    public void ClearState()
+    {
+        videoPlayer.Pause();
+        isSliderDragging = false;
+    }
+
+    void Update()
+    {
+        //更新进度条
+        if (videoPlayer != null && videoPlayer.isPrepared && !isProcessing && !isSliderDragging)
+        {
+            long totalFrames = (long)videoPlayer.frameCount;
+            if (totalFrames > 0)
+            {
+                float progress = (float)videoPlayer.frame / totalFrames;
+                
+                videoSlider.SetValueWithoutNotify(progress);
             }
         }
     }

@@ -8,11 +8,13 @@ public class ButtonManager: MonoBehaviour
     public Button[] buttons;
     public ScreenManager screenManager;
     public VideoManager videoManager;
+    public AutoCutManager autoCutManager;
 
     void Start()
     {
         screenManager = GetComponent<ScreenManager>();
         videoManager = GetComponent<VideoManager>();
+        autoCutManager = GetComponent<AutoCutManager>();
         foreach (Button btn in buttons)
         {
             btn.onClick.AddListener(() => OnButtonClicked(btn.gameObject));
@@ -85,47 +87,54 @@ public class ButtonManager: MonoBehaviour
 
             //Autocutter screen buttons
             case "btnACLastFrame":
-
+                autoCutManager.LastFrameVid();
                 break;
 
             case "btnACNextFrame":
-
+                autoCutManager.NextFrameVid();
                 break;
 
             case "btnACPause":
-
+                autoCutManager.PauseVid();
                 break;
 
             case "btnACPlay":
-
+                autoCutManager.PlayVid();
                 break;
 
             case "btnAChelp":
-
+                autoCutManager.ChangeHelpState(true);
+                break;
+            case "btnACHelpReturn":
+                autoCutManager.ChangeHelpState(false);
                 break;
 
             case "btnACrefresh":
-
+                autoCutManager.UpdateDropdown();
                 break;
 
-            case " btnACChooseCurrentFrame":
-
+            case "btnACChooseCurrentFrame":
+                autoCutManager.ChooseCurrentAsStart();
                 break;
 
             case "btnACAutoFind":
-
+                autoCutManager.StartFindLoop();
                 break;
 
             case "btnACManualFind":
-
+                autoCutManager.ChooseCurrenAsEnd();
                 break;
 
             case "btnACProcess":
-
+                autoCutManager.CutVideo();
                 break;
-                
+            case "btnACreturn":
+                screenManager.SwitchTo("MainScreen Canv");
+                autoCutManager.ClearState();
+                break;
+
             default:
-                Debug.LogWarning("ButtonManager Encounter a name that points to a non-existing button:" + btn.name);
+                Debug.LogWarning($"ButtonManager encountered a name that points to a non-existing button: '{btn.name}'");
                 break;
         }
     }
