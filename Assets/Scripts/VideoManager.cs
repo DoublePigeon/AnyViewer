@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
@@ -19,12 +20,17 @@ public class VideoManager : MonoBehaviour
     public VideoTuple[] videoplayers;
     public Dictionary<RawImage, Coroutine> fadeCoroutines;
     private VideoPlayer currentVideo = null;
+    private string currentVideoFolder;
+    private string videoFolder;
+    public TMP_Dropdown videoChooser;
+    private List<string> videoChooserOptions;
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         fadeCoroutines = new Dictionary<RawImage, Coroutine>();
         string rootPath = Path.GetFullPath(Path.Combine(Application.dataPath, "../"));
-        string videoFolder = Path.Combine(rootPath, "CustomVideos");
+        videoFolder = Path.Combine(rootPath, "CustomVideos");
 
         if (!Directory.Exists(videoFolder))
         {
@@ -32,7 +38,23 @@ public class VideoManager : MonoBehaviour
             Debug.Log("Created CustomVideo folder since it does not exists:" + videoFolder);
         }
 
-        string[] videoFiles = Directory.GetFiles(videoFolder);
+        videoChooser.onValueChanged.AddListener(OnVideoChooserValChanged);
+        InitDropdown();
+
+        refreshVideos();
+    }
+
+    void refreshVideos()
+    {
+        string chosenVideoFolder = Path.Combine(videoFolder, currentVideoFolder);
+
+        if (!Directory.Exists(chosenVideoFolder))
+        {
+            Debug.Log("Chosen folder does not exist:" + chosenVideoFolder);
+            return;
+        }
+
+        string[] videoFiles = Directory.GetFiles(chosenVideoFolder);
 
         if (videoFiles.Length > 0)
         {
@@ -57,6 +79,47 @@ public class VideoManager : MonoBehaviour
             vid.videoPlayer.enabled = false;
             vid.rawImage.enabled = false;
         }
+    }
+
+      public void InitDropdown()
+    {
+        List<string> newOptions = new List<string>();
+
+        string[] videoFolders = Directory.GetDirectories(videoFolder);
+
+        if (videoFolders.Length == 0)
+        {
+            Debug.LogWarning("No folders in CustomVideos folder");
+            return;
+        }
+
+        currentVideoFolder = Path.GetFileName(videoFolders[0]);
+        
+        string chosenPath = Path.Combine(videoFolder, currentVideoFolder);
+        string[] videos = Directory.GetFiles(chosenPath);
+
+        videoChooser.ClearOptions();
+
+        foreach (string path in videoFolders)
+        {
+            newOptions.Add(Path.GetFileName(path));
+        }
+
+        videoChooserOptions = newOptions;
+        videoChooser.AddOptions(newOptions);
+
+        videoChooser.value = 0;
+    }
+
+    public void OnVideoChooserValChanged(int index)
+    {
+        string selectedText = videoChooser.options[index].text;
+
+        currentVideoFolder = selectedText;
+
+        refreshVideos();
+
+        Debug.Log("选中了视频组：" + selectedText);
     }
 
     public void SwitchTo(string vidname)

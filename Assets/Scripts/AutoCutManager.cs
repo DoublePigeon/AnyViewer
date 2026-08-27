@@ -194,6 +194,8 @@ public class AutoCutManager : MonoBehaviour
             videoPlayer.seekCompleted -= onSeek;
         }
 
+
+        long frameDivisor = totalFrames / 4;
         // 逐帧步进寻找循环点 
         for (long frame = checkStartFrame; frame < totalFrames; ++frame)
         {
@@ -211,9 +213,9 @@ public class AutoCutManager : MonoBehaviour
                 bestMatchFrame = frame;
             }
 
-            if (frame % 300 == 0) 
+            if (frame % frameDivisor == 0) 
             {
-                UnityEngine.Debug.Log($"处理进度: {frame} / {totalFrames}");
+                AddPlayerLog($"处理进度: {frame} / {totalFrames}");
             }
         }
 
@@ -320,6 +322,7 @@ public class AutoCutManager : MonoBehaviour
             AddPlayerLog("已经正在截取视频，不能重复进行这一操作", "#ff0000");
             return;
         }
+
         isCutting = true;
 
         string fileName = Path.GetFileNameWithoutExtension(videoPath) + "_loop.mp4";
@@ -363,8 +366,8 @@ public class AutoCutManager : MonoBehaviour
         catch (System.Exception ex)
         {
             UnityEngine.Debug.LogError("FFmpeg 运行失败，请检查路径。错误信息：" + ex.Message);
+            isCutting = false;
         }
-        isCutting = false;
     }
 
     private IEnumerator WaitForFFmpegProcess(Process process, string savePath)
@@ -375,6 +378,8 @@ public class AutoCutManager : MonoBehaviour
         }
         AddPlayerLog($"截取完成！文件保存在：{savePath}", "#33ff00");
         process.Dispose(); 
+
+        isCutting = false;
     }
 
     public void AddPlayerLog(string message, string color)
@@ -563,7 +568,7 @@ public class AutoCutManager : MonoBehaviour
         AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为起始");
     }
 
-    public void ChooseCurrenAsEnd()
+    public void ChooseCurrentAsEnd()
     {
         if (videoPlayer.isPlaying)
         {
@@ -577,6 +582,8 @@ public class AutoCutManager : MonoBehaviour
         }
         endFrame = videoPlayer.frame;
         AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为起始");
+
+        hasLastFrame = true;
     }
 
     public void SetRefState(bool state)

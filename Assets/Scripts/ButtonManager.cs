@@ -122,7 +122,7 @@ public class ButtonManager: MonoBehaviour
                 break;
 
             case "btnACManualFind":
-                autoCutManager.ChooseCurrenAsEnd();
+                autoCutManager.ChooseCurrentAsEnd();
                 break;
 
             case "btnACProcess":
