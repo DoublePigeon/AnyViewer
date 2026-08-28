@@ -117,9 +117,13 @@ public class VideoManager : MonoBehaviour
 
         currentVideoFolder = selectedText;
 
+        currentVideo = null;
+
         refreshVideos();
 
         Debug.Log("选中了视频组：" + selectedText);
+
+        SwitchTo("Vloop1");
     }
 
     public void SwitchTo(string vidname)

@@ -328,6 +328,14 @@ public class AutoCutManager : MonoBehaviour
         string fileName = Path.GetFileNameWithoutExtension(videoPath) + "_loop.mp4";
         string savePath = Path.Combine(saveDirectory, fileName);
 
+        int i = 0;
+        while (File.Exists(savePath))
+        {
+            fileName = Path.GetFileNameWithoutExtension(videoPath) + $"_loop_{i}.mp4";
+            savePath = Path.Combine(saveDirectory, fileName);
+            ++i;
+        }
+
         double beginSec = (double)startFrame / fps;
         double endSec = (double)endFrame / fps;
 
