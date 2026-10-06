@@ -532,6 +532,9 @@ public class AutoCutManager : MonoBehaviour
         {
             videoPath = newVideoPath;
             videoPlayer.url = newVideoPath;
+            hasLastFrame = false;
+            startFrame = 0;
+            endFrame = 0;
         }else
         {
             AddPlayerLog("这一视频在目录中不存在: " + newVideoPath, "#ff0000");
@@ -589,7 +592,8 @@ public class AutoCutManager : MonoBehaviour
             return;
         }
         endFrame = videoPlayer.frame;
-        AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为起始");
+        fps = videoPlayer.frameRate;
+        AddPlayerLog($"选取了第 {videoPlayer.frame} 帧作为结尾");
 
         hasLastFrame = true;
     }
